@@ -87,6 +87,14 @@ from .update_checker import UpdateChecker, UpdateInfo
 
 
 # ---------------------------------------------------------------------------
+# Repository links (Help menu)
+# ---------------------------------------------------------------------------
+
+GITHUB_REPO_URL = "https://github.com/Ashephard24/claude-video-ingest"
+GITHUB_ISSUES_URL = f"{GITHUB_REPO_URL}/issues/new/choose"
+
+
+# ---------------------------------------------------------------------------
 # Queue data model
 # ---------------------------------------------------------------------------
 
@@ -962,8 +970,16 @@ class MainWindow(QMainWindow):
         reconcile_action.triggered.connect(self._on_reconcile_clicked)
 
         self._help_menu = menubar.addMenu("&Help")
-        about_action = self._help_menu.addAction("&About Claude Video Ingest")
-        about_action.triggered.connect(self._on_about_clicked)
+        # Hold QAction references on self as well — same GC concern as the
+        # menus: Python-side wrappers for actions can be collected if only
+        # held as locals, breaking the triggered signal connections.
+        self._report_bug_action = self._help_menu.addAction("&Report a bug")
+        self._report_bug_action.triggered.connect(self._on_report_bug_clicked)
+        self._view_github_action = self._help_menu.addAction("&View on GitHub")
+        self._view_github_action.triggered.connect(self._on_view_github_clicked)
+        self._help_menu.addSeparator()
+        self._about_action = self._help_menu.addAction("&About Claude Video Ingest")
+        self._about_action.triggered.connect(self._on_about_clicked)
 
     def _build_queue_tab(self) -> QWidget:
         """Build the Queue tab's contents (formerly the whole window)."""
@@ -1090,6 +1106,14 @@ class MainWindow(QMainWindow):
         )
         # Reflect the change in the Library tab immediately.
         self._library_view.refresh()
+
+    @Slot()
+    def _on_report_bug_clicked(self) -> None:
+        QDesktopServices.openUrl(QUrl(GITHUB_ISSUES_URL))
+
+    @Slot()
+    def _on_view_github_clicked(self) -> None:
+        QDesktopServices.openUrl(QUrl(GITHUB_REPO_URL))
 
     @Slot()
     def _on_about_clicked(self) -> None:
