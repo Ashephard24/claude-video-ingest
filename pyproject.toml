@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-video-ingest"
-version = "2.0.1"
+version = "2.1.0"
 description = "Turn YouTube videos into Claude-ready reference folders. Desktop GUI + CLI."
 readme = "README.md"
 requires-python = ">=3.10"

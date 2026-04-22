@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.1.0 — 2026-04-22
+
+**Usability + accuracy polish based on v2.0.1 field testing.**
+
+### Fixed
+
+- **Windows console window no longer flashes** during frame extraction. The packaged binary now suppresses subprocess console windows, so users can use their computer for other things while a video is being ingested in the background.
+- **Help > About menu action** was declared but not firing. Now opens the About dialog correctly.
+
+### Added
+
+- **Library view is sortable and filterable.** Click any column header (Title, Creator, Duration, Ingested) to sort. Use the new search box to filter by title or creator as you type.
+- **Delete-from-library button** in the library detail pane. Moves the video's folder to the OS recycle bin / trash (recoverable) and prunes it from the library index.
+- **Watch-on-YouTube link** in the library detail pane. Also embedded in `START-HERE-for-Claude.md` and `ABOUT-this-video.md` so Claude has the URL when answering questions.
+- **Clear log button** in the Queue tab. Each ingest now gets a visual separator + timestamp in the log so users can distinguish current work from earlier runs.
+- **Smarter Claude prompting** in `START-HERE-for-Claude.md`. Claude is now explicitly instructed to cross-reference the transcript against frames when answering, and to scan the whole transcript for score/state commentary before committing to stroke types. Addresses a birdie-vs-eagle misidentification observed in v2.0.1 testing.
+
+### Changed
+
+- **Batch folders in the library content tree start collapsed** by default. Expand manually to see frame files.
+- **README** now includes a "Known limitations" section about Claude occasionally missing details that require cross-referencing multiple video moments.
+
+### Dependencies
+
+- Added `send2trash>=1.8.0` for the delete-to-recycle-bin feature. Small, pure-Python, cross-platform.
+
 ## 2.0.1 — 2026-04-22
 
 **Hotfix: v2.0.0 binary crashed on launch.**
