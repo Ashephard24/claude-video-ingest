@@ -235,8 +235,25 @@ In this same message (or immediately after), the user will attach:
 1. Read the transcript and look at the frames carefully. Treat them as
    two views of the same video — the transcript tells you what was said,
    the frames tell you what was shown.
-2. Once you've ingested everything, give me a brief 2-3 sentence summary
+2. **Important — reading the attached `transcript.md`:** the attached
+   `transcript.md` file is typically ~100 KB and will arrive on
+   claude.ai as a fetchable attachment, NOT as inline content in this
+   conversation. If `transcript.md` is listed in my message but its
+   contents are not visible in your immediate context, you MUST use
+   your file-read tool to fetch the transcript before concluding
+   anything about it. Do NOT say "no transcript was included" or
+   "transcript is missing" without having first attempted a tool-read.
+3. Once you've ingested everything, give me a brief 2-3 sentence summary
    of what the video is about, then wait for my questions.
+
+## Never answer from frames alone
+
+The transcript is the authoritative source for what was said in the
+video; frames are complementary visual context. Both are required for
+quality answers. Do NOT attempt to answer questions about the video
+using frames alone. If, after tool-reading attempts, the transcript
+content is genuinely unavailable to you, tell me to re-drag the
+`transcript.md` file rather than proceeding with a frames-only answer.
 
 ## Answering questions about the video
 
@@ -313,6 +330,15 @@ There are THREE distinct states. Please respond differently in each:
   brief 2-3 sentence summary of what the video is about and say you're
   ready for questions.
 
+  **Important — reading the attached `transcript.md`:** the per-batch
+  `transcript.md` file is typically ~100 KB and will arrive on claude.ai
+  as a fetchable attachment, NOT as inline content in this conversation.
+  When you acknowledge a batch that lists `transcript.md` but whose
+  contents you do not see in your immediate context, you MUST use your
+  file-read tool to fetch the transcript before concluding anything
+  about it. Do NOT say "no transcript was included" or "transcript is
+  missing" without having first attempted a tool-read.
+
 **STATE C — The user combined the instructions and batch 1 in ONE message**
 (i.e. this message contains BOTH this file AND batch-1 contents like
 `transcript.md` and frame images):
@@ -325,6 +351,16 @@ There are THREE distinct states. Please respond differently in each:
 been received.** The user knows this and will send all batches before
 asking anything substantive. If they do ask early, remind them you're
 still waiting for batch N of {n_batches}.
+
+## Never answer from frames alone
+
+The transcript is the authoritative source for what was said in the
+video; frames are complementary visual context. Both are required for
+quality answers. Do NOT attempt to answer questions about the video
+using frames alone. If, after tool-reading attempts, the transcript
+content is genuinely unavailable to you, tell the user to re-drag the
+batch containing `transcript.md` (typically batch 1) rather than
+proceeding with a frames-only answer.
 
 ## Answering questions about the video
 

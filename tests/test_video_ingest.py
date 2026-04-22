@@ -758,6 +758,80 @@ class TestBatchPlanning:
         # The STATE A instruction must explicitly forbid saying "Received batch 1"
         assert 'Do NOT say "Received batch 1"' in prompt
 
+    def test_prompt_requires_tool_read_and_forbids_frames_only(self, tmp_path: Path):
+        """
+        Regression test for the v2.1.0 field-testing bug: Claude claimed
+        the transcript was missing when it had actually been uploaded as
+        a fetchable attachment. v2.1.1 hardens the prompt with two
+        explicit behaviors — Claude must tool-read the transcript before
+        declaring it missing, and must never answer from frames alone.
+
+        Both the single-batch and multi-batch prompts must contain the
+        pinned phrases.
+        """
+        # Single-batch case
+        frames_src_a = tmp_path / "src_small"
+        frames_src_a.mkdir()
+        small_frames = []
+        for i in range(5):
+            p = frames_src_a / f"{i:03d}.jpg"
+            p.write_bytes(b"fake")
+            small_frames.append(ExtractedFrame(timestamp_seconds=float(i * 5), path=p))
+        folder_a = tmp_path / "single"
+        write_video_folder(
+            folder_a,
+            VideoMetadata(
+                video_id="s", title="Single", creator="Creator",
+                duration_seconds=60, upload_date=None, description="",
+                url="https://youtube.com/watch?v=s", thumbnail_url=None,
+                has_captions=True, caption_languages=["en"],
+            ),
+            segments=[TranscriptSegment(0.0, 60.0, "content")],
+            frames=small_frames,
+            transcript_source="test",
+        )
+        single_prompt = (folder_a / "START-HERE-for-Claude.md").read_text(
+            encoding="utf-8-sig"
+        )
+        assert "file-read tool" in single_prompt, \
+            "single-batch prompt must tell Claude to use the file-read tool"
+        assert "frames alone" in single_prompt, \
+            "single-batch prompt must forbid answering from frames alone"
+
+        # Multi-batch case
+        frames_src_b = tmp_path / "src_big"
+        frames_src_b.mkdir()
+        big_frames = []
+        for i in range(30):
+            p = frames_src_b / f"{i:03d}.jpg"
+            p.write_bytes(b"fake")
+            big_frames.append(ExtractedFrame(timestamp_seconds=float(i * 5), path=p))
+        folder_b = tmp_path / "multi"
+        write_video_folder(
+            folder_b,
+            VideoMetadata(
+                video_id="m", title="Multi", creator="Creator",
+                duration_seconds=200, upload_date=None, description="",
+                url="https://youtube.com/watch?v=m", thumbnail_url=None,
+                has_captions=True, caption_languages=["en"],
+            ),
+            segments=[TranscriptSegment(0.0, 200.0, "content")],
+            frames=big_frames,
+            transcript_source="test",
+        )
+        multi_prompt = (folder_b / "START-HERE-for-Claude.md").read_text(
+            encoding="utf-8-sig"
+        )
+        assert "file-read tool" in multi_prompt, \
+            "multi-batch prompt must tell Claude to use the file-read tool"
+        assert "frames alone" in multi_prompt, \
+            "multi-batch prompt must forbid answering from frames alone"
+        # The three-state structure from v1.2.2 must still be intact —
+        # the new paragraphs are additions, not replacements.
+        assert "STATE A" in multi_prompt
+        assert "STATE B" in multi_prompt
+        assert 'Do NOT say "Received batch 1"' in multi_prompt
+
     def test_batched_produces_correct_batch_folder_structure(self, tmp_path: Path):
         """
         Verify the batched layout: frames distributed correctly, no
