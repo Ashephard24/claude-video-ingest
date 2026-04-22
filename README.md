@@ -163,6 +163,12 @@ See [BUILDING.md](BUILDING.md). Short version: `python build.py` after `pip inst
 
 ---
 
+## Known limitations
+
+Claude draws on the transcript and extracted frames together, but it can occasionally miss details that require cross-referencing multiple moments in a video. If an answer seems wrong, follow up with a specific timestamp question — Claude can usually correct itself when pointed at the right place. Frame coverage is sparse (~60 frames across a full video) so rapid visual events may fall between frames.
+
+---
+
 ## License
 
 MIT. Copyright © 2026 Aidan Shephard. See [LICENSE](LICENSE).
