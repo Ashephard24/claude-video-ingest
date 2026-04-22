@@ -729,23 +729,27 @@ class MainWindow(QMainWindow):
         """Menu bar: File → Settings, Quit; Tools → Doctor, Reconcile; Help → About."""
         menubar = self.menuBar()
 
-        file_menu = menubar.addMenu("&File")
-        settings_action = file_menu.addAction("&Settings...")
+        # Hold Python-side references to the QMenu objects. Without these,
+        # PySide6 (6.11+) garbage-collects the menus after this method
+        # returns even though the menubar holds them in C++, which leaves
+        # the menu titles visible but unclickable.
+        self._file_menu = menubar.addMenu("&File")
+        settings_action = self._file_menu.addAction("&Settings...")
         settings_action.setShortcut("Ctrl+,")
         settings_action.triggered.connect(self._on_settings_clicked)
-        file_menu.addSeparator()
-        quit_action = file_menu.addAction("&Quit")
+        self._file_menu.addSeparator()
+        quit_action = self._file_menu.addAction("&Quit")
         quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self.close)
 
-        tools_menu = menubar.addMenu("&Tools")
-        doctor_action = tools_menu.addAction("Run &Doctor (environment check)")
+        self._tools_menu = menubar.addMenu("&Tools")
+        doctor_action = self._tools_menu.addAction("Run &Doctor (environment check)")
         doctor_action.triggered.connect(self._on_doctor_clicked)
-        reconcile_action = tools_menu.addAction("&Reconcile library (prune deleted folders)")
+        reconcile_action = self._tools_menu.addAction("&Reconcile library (prune deleted folders)")
         reconcile_action.triggered.connect(self._on_reconcile_clicked)
 
-        help_menu = menubar.addMenu("&Help")
-        about_action = help_menu.addAction("&About Claude Video Ingest")
+        self._help_menu = menubar.addMenu("&Help")
+        about_action = self._help_menu.addAction("&About Claude Video Ingest")
         about_action.triggered.connect(self._on_about_clicked)
 
     def _build_queue_tab(self) -> QWidget:
