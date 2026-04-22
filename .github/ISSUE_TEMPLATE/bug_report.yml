@@ -1,0 +1,75 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. The fastest path to a fix:
+
+        1. Reproduce the bug in the app.
+        2. When the error dialog appears, click **Copy error details**.
+        3. Paste the result into the "Error details" field below.
+
+        If you don't have error details (e.g. the bug is a visual or UX issue), skip that field and describe what you saw in the "What happened?" field.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Run `ClaudeVideoIngest --version` in a terminal, or check the About dialog.
+      placeholder: "2.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: false
+      options:
+        - Windows
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install?
+      options:
+        - Downloaded binary from GitHub Releases
+        - Built from source (pip install)
+        - Built binary locally with build.py
+    validations:
+      required: true
+
+  - type: input
+    id: video-url
+    attributes:
+      label: Video URL (if applicable)
+      description: The YouTube URL that triggered the bug. Redact if private.
+      placeholder: "https://www.youtube.com/watch?v=..."
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-details
+    attributes:
+      label: Error details
+      description: Paste the output from the **Copy error details** button in the error dialog. If the error log file is mentioned and exists, attach it too (drag and drop works here).
+      render: markdown
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Anything else that might help — screenshots, other URLs that also fail / succeed, recent changes to your setup, etc.

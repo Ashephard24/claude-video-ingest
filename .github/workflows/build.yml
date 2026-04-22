@@ -1,0 +1,152 @@
+name: build
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  # Manual trigger from the Actions tab — useful for testing the workflow
+  # without cutting a real release.
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Sanity: make sure the pushed tag matches the in-source __version__.
+  # If these disagree, something's wrong and we should stop before wasting
+  # 20 minutes building three binaries that will be tagged incorrectly.
+  # ---------------------------------------------------------------------------
+  verify-version:
+    name: Verify tag matches __version__
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    outputs:
+      tag_version: ${{ steps.check.outputs.tag_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare tag to __version__
+        id: check
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          SRC_VERSION=$(python -c "import sys; sys.path.insert(0, 'src'); from video_ingest import __version__; print(__version__)")
+          echo "Tag version:     $TAG"
+          echo "Source version:  $SRC_VERSION"
+          if [ "$TAG" != "$SRC_VERSION" ]; then
+            echo "::error::Tag v$TAG does not match __version__ $SRC_VERSION"
+            exit 1
+          fi
+          echo "tag_version=$TAG" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Build a binary on each platform. Runs in parallel. If any one fails the
+  # release job doesn't run (needs: build).
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build on ${{ matrix.os }}
+    needs: [verify-version]
+    # verify-version is skipped on workflow_dispatch; allow the build to run
+    # anyway in that case.
+    if: |
+      always() &&
+      (needs.verify-version.result == 'success' || needs.verify-version.result == 'skipped')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: ClaudeVideoIngest-windows.exe
+            build_output: dist/ClaudeVideoIngest.exe
+          - os: macos-latest
+            artifact_name: ClaudeVideoIngest-macos.zip
+            build_output: dist/ClaudeVideoIngest.app
+          - os: ubuntu-latest
+            artifact_name: ClaudeVideoIngest-linux
+            build_output: dist/ClaudeVideoIngest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project + build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[build]"
+
+      - name: Run PyInstaller
+        run: pyinstaller build.spec --clean --noconfirm
+
+      # --- Platform-specific packaging for the release artifact ---
+
+      # Windows: rename the .exe to include the platform tag
+      - name: Rename Windows artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Move-Item dist/ClaudeVideoIngest.exe dist/${{ matrix.artifact_name }}
+
+      # macOS: zip the .app bundle. Users get a single .zip; unzipping
+      # produces ClaudeVideoIngest.app which they drag to /Applications.
+      - name: Zip macOS .app bundle
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -r -y ${{ matrix.artifact_name }} ClaudeVideoIngest.app
+
+      # Linux: rename the binary. Users chmod +x and run directly.
+      - name: Rename Linux artifact
+        if: runner.os == 'Linux'
+        run: mv dist/ClaudeVideoIngest dist/${{ matrix.artifact_name }}
+
+      # --- Upload artifact for the release job to consume ---
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Collect all three platform artifacts and attach to a GitHub Release.
+  # Only runs on tag pushes, not on workflow_dispatch.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Create GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Flatten artifact directory
+        run: |
+          mkdir -p release-files
+          find release-artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "ClaudeVideoIngest-linux" \) \
+            -exec cp {} release-files/ \;
+          ls -la release-files/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/*
+          body_path: CHANGELOG.md
+          # Mark any tag containing -beta or -rc as a prerelease
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+          # Use the tag name as the release title
+          name: ${{ github.ref_name }}
+          generate_release_notes: false
+          draft: false
+          fail_on_unmatched_files: true

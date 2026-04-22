@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-video-ingest"
+version = "2.0.0"
+description = "Turn YouTube videos into Claude-ready reference folders. Desktop GUI + CLI."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Aidan Shephard" }]
+
+# Runtime deps for the GUI build. The pipeline works without PySide6 if you
+# only want the CLI; see optional-dependencies for a cli-only install.
+dependencies = [
+    "yt-dlp>=2024.1.1",
+    "rich>=13.0.0",
+    "PySide6>=6.6.0",
+    "faster-whisper>=1.0.0",
+    "imageio-ffmpeg>=0.4.9",
+]
+
+[project.optional-dependencies]
+# Install with: pip install -e ".[dev]"
+dev = ["pytest>=7.0"]
+
+# Install with: pip install -e ".[build]" — tooling for producing binaries
+build = [
+    "pyinstaller>=6.0",
+    "pyinstaller-hooks-contrib>=2024.0",
+]
+
+[project.scripts]
+# CLI entry — same behavior as 1.2.2
+video-ingest = "video_ingest.cli:main"
+
+[project.gui-scripts]
+# GUI entry — used by PyInstaller as the windowed entry point
+claude-video-ingest = "video_ingest.gui.app:gui_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest an enhancement or new feature
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing a feature request, check the **CHANGELOG** for the "Not included in v2.0.0" section — some things are deliberately out of scope and won't be reconsidered without strong new information.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the underlying need, not the specific feature. "I want to X because Y" is more useful than "please add feature Z."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: If you have a specific design in mind, describe it. It's fine to leave this sparse if you don't — the problem statement matters more.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Are there workarounds you've tried? Other tools that handle this well?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: How much of a v1-breaking change would this be?
+      options:
+        - "No change to output format or CLI"
+        - "Adds new CLI flag or GUI option; defaults unchanged"
+        - "Would change output format or default behavior"
+        - "Not sure"
+    validations:
+      required: true

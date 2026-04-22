@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or usage help
+    url: https://github.com/Ashephard24/claude-video-ingest/discussions
+    about: Ask a question or get help with using Claude Video Ingest.
