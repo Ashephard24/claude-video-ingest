@@ -46,7 +46,7 @@ SRC = ROOT / "src"
 
 # CLI + GUI share one binary. cli.py's main() branches to gui_main() when
 # invoked with no args (see cli.py:_no_cli_args_provided).
-entry_script = str(SRC / "video_ingest" / "cli.py")
+entry_script = str(ROOT / "launcher.py")
 
 
 # ---------------------------------------------------------------------------

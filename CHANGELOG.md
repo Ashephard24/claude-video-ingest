@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.1 — 2026-04-22
+
+**Hotfix: v2.0.0 binary crashed on launch.**
+
+- Fixed `ImportError: attempted relative import with no known parent package`
+  that caused the packaged binary to crash immediately on double-click.
+  Root cause: build.spec passed cli.py directly to PyInstaller as a
+  script, which loaded the module outside the video_ingest package, so
+  the package's relative imports (`from .gui.app import gui_main`, etc.)
+  failed at runtime. Replaced with a dedicated launcher.py entry point
+  that imports video_ingest.cli as a proper module.
+- No functional changes. v2.0.0's source code is unaffected — only the
+  packaging changed.
+
 ## 2.0.0 — 2026-04-22
 
 **Major release: desktop GUI app, distributed as a standalone binary.**
