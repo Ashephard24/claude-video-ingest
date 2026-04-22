@@ -482,6 +482,9 @@ class LibraryView(QWidget):
             QAbstractItemView.EditTrigger.NoEditTriggers
         )
         self._videos_table.verticalHeader().setVisible(False)
+        # Taller default rows so wrapped titles don't clip.
+        self._videos_table.verticalHeader().setDefaultSectionSize(32)
+        self._videos_table.setWordWrap(True)
         header = self._videos_table.horizontalHeader()
         header.setSectionResizeMode(_LIB_COL_TITLE, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(
@@ -565,6 +568,14 @@ class LibraryView(QWidget):
 
     def refresh(self) -> None:
         """Reload the entries list from disk and repopulate the left pane."""
+        # Save column widths before the model rebuild so auto-sized columns
+        # don't momentarily collapse while rows are swapped out. The Stretch
+        # column ignores setColumnWidth and refills automatically.
+        saved_widths = {
+            col: self._videos_table.columnWidth(col)
+            for col in range(self._videos_model.columnCount())
+        }
+
         try:
             self._entries = read_library_index()
         except Exception as e:  # noqa: BLE001
@@ -615,6 +626,12 @@ class LibraryView(QWidget):
                 if library_root() / entry.folder_name == previously_selected:
                     target_row_source = i
                     break
+
+        # Restore prior column widths where we had them. The Stretch column
+        # is re-filled by Qt; these calls are no-ops for it.
+        for col, width in saved_widths.items():
+            if width > 0:
+                self._videos_table.setColumnWidth(col, width)
 
         if target_row_source is not None:
             src_idx = self._videos_model.index(target_row_source, _LIB_COL_TITLE)
