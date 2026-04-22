@@ -219,7 +219,7 @@ what was shown on screen.
 - **Title:** {metadata.title}
 - **Creator:** {metadata.creator}
 - **Duration:** {format_duration(metadata.duration_seconds)}
-- **Source URL:** {metadata.url}
+- **Watch on YouTube:** [{metadata.url}]({metadata.url})
 
 ## What will follow this file
 
@@ -261,7 +261,7 @@ Because the video has many frames, the user is uploading files across
 - **Title:** {metadata.title}
 - **Creator:** {metadata.creator}
 - **Duration:** {format_duration(metadata.duration_seconds)}
-- **Source URL:** {metadata.url}
+- **Watch on YouTube:** [{metadata.url}]({metadata.url})
 
 ## The upload plan ({n_batches} batches, {total_frames} frames + 3 text files)
 
@@ -479,7 +479,7 @@ def _about_text(metadata: VideoMetadata, transcript_source: str) -> str:
         "",
         f"- **Creator:** {metadata.creator}",
         f"- **Duration:** {format_duration(metadata.duration_seconds)}",
-        f"- **Source URL:** {metadata.url}",
+        f"- **Watch on YouTube:** [{metadata.url}]({metadata.url})",
         f"- **YouTube ID:** {metadata.video_id}",
     ]
     if metadata.upload_date:

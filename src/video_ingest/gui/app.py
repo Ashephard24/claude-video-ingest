@@ -518,6 +518,12 @@ class LibraryView(QWidget):
         self._detail_subtitle.setWordWrap(True)
         right_layout.addWidget(self._detail_subtitle)
 
+        self._youtube_link_label = QLabel()
+        self._youtube_link_label.setOpenExternalLinks(True)
+        self._youtube_link_label.setTextFormat(Qt.TextFormat.RichText)
+        self._youtube_link_label.setVisible(False)
+        right_layout.addWidget(self._youtube_link_label)
+
         # Tree of files/folders in the video folder. DraggableTreeWidget
         # lets the user drag items out of the app window into a Claude chat.
         self._contents_tree = DraggableTreeWidget()
@@ -580,6 +586,7 @@ class LibraryView(QWidget):
             )
             self._detail_title.setText("Select a video to see its contents")
             self._detail_subtitle.setText("")
+            self._youtube_link_label.setVisible(False)
             self._contents_tree.clear()
             self._open_video_folder_btn.setEnabled(False)
             self._delete_video_btn.setEnabled(False)
@@ -639,6 +646,7 @@ class LibraryView(QWidget):
             self._contents_tree.clear()
             self._detail_title.setText("Select a video to see its contents")
             self._detail_subtitle.setText("")
+            self._youtube_link_label.setVisible(False)
             self._open_video_folder_btn.setEnabled(False)
             self._delete_video_btn.setEnabled(False)
             return
@@ -650,6 +658,7 @@ class LibraryView(QWidget):
         if entry is None:
             self._selected_folder = None
             self._contents_tree.clear()
+            self._youtube_link_label.setVisible(False)
             self._open_video_folder_btn.setEnabled(False)
             self._delete_video_btn.setEnabled(False)
             return
@@ -661,6 +670,13 @@ class LibraryView(QWidget):
         self._detail_subtitle.setText(
             f"by {entry.creator} • {entry.duration} • ingested {entry.ingest_date}"
         )
+        if entry.video_url:
+            self._youtube_link_label.setText(
+                f'<a href="{entry.video_url}">Watch on YouTube ↗</a>'
+            )
+            self._youtube_link_label.setVisible(True)
+        else:
+            self._youtube_link_label.setVisible(False)
         self._populate_contents_tree(folder)
         self._open_video_folder_btn.setEnabled(folder.exists())
         self._delete_video_btn.setEnabled(folder.exists())
