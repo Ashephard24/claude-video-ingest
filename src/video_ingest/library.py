@@ -232,12 +232,36 @@ In this same message (or immediately after), the user will attach:
 
 ## How I'd like you to handle this
 
-1. Read the transcript and look at the frames carefully.
-2. When referencing specific moments later, cite timestamps
-   (e.g. "at 4:23 the creator shows..."). The FRAMES-index.md file
-   maps timestamps to frame filenames.
-3. Once you've ingested everything, give me a brief 2-3 sentence summary
+1. Read the transcript and look at the frames carefully. Treat them as
+   two views of the same video — the transcript tells you what was said,
+   the frames tell you what was shown.
+2. Once you've ingested everything, give me a brief 2-3 sentence summary
    of what the video is about, then wait for my questions.
+
+## Answering questions about the video
+
+When I ask a question, please follow these rules:
+
+1. **Use frames AND transcript together.** Never rely on the transcript
+   alone for a factual answer. Open the frames around the relevant
+   timestamp and confirm what was actually shown on screen — visual
+   context often disambiguates what words alone can't.
+
+2. **Cross-reference before committing to an answer.** When I ask about
+   a specific fact (a score, a stroke type, a name, a number, an event),
+   scan the WHOLE transcript for other mentions of the same topic before
+   answering, not just the segment nearest the event. Live commentary
+   can be wrong or incomplete; later recaps ("we're at -5", "three
+   eagles in four holes") often clarify what actually happened.
+
+3. **Quote timestamps and reference frame filenames.** When you describe
+   a moment, quote the timestamp (e.g. "at 4:23...") and name the
+   relevant frame (e.g. "frame 00-04-23.jpg shows..."). The
+   FRAMES-index.md file maps every timestamp to its frame filename.
+
+4. **Flag ambiguity; don't guess.** If two parts of the transcript
+   disagree, or a frame contradicts the transcript, say so explicitly
+   and show me both. Don't silently pick one and commit to it.
 
 Thanks. Ready when you are.
 """
@@ -297,14 +321,37 @@ There are THREE distinct states. Please respond differently in each:
 
 ## Other rules
 
-1. **Do NOT answer any content questions until ALL {n_batches} batches have
-   been received.** The user knows this and will send all batches before
-   asking anything substantive. If they do ask early, remind them you're
-   still waiting for batch N of {n_batches}.
+**Do NOT answer any content questions until ALL {n_batches} batches have
+been received.** The user knows this and will send all batches before
+asking anything substantive. If they do ask early, remind them you're
+still waiting for batch N of {n_batches}.
 
-2. **When referencing specific moments later**, cite timestamps (e.g.
-   "at 4:23 the creator shows..."). The FRAMES-index.md file (in batch 1)
-   maps every timestamp to its frame image filename.
+## Answering questions about the video
+
+Once ALL {n_batches} batches have been received, use these rules when the
+user asks questions:
+
+1. **Use frames AND transcript together.** Never rely on the transcript
+   alone for a factual answer. Open the frames around the relevant
+   timestamp and confirm what was actually shown on screen — visual
+   context often disambiguates what words alone can't.
+
+2. **Cross-reference before committing to an answer.** When the user asks
+   about a specific fact (a score, a stroke type, a name, a number, an
+   event), scan the WHOLE transcript for other mentions of the same
+   topic before answering, not just the segment nearest the event. Live
+   commentary can be wrong or incomplete; later recaps ("we're at -5",
+   "three eagles in four holes") often clarify what actually happened.
+
+3. **Quote timestamps and reference frame filenames.** When you describe
+   a moment, quote the timestamp (e.g. "at 4:23...") and name the
+   relevant frame (e.g. "frame 00-04-23.jpg shows..."). The
+   FRAMES-index.md file (in batch 1) maps every timestamp to its frame
+   image filename.
+
+4. **Flag ambiguity; don't guess.** If two parts of the transcript
+   disagree, or a frame contradicts the transcript, say so explicitly
+   and show the user both. Don't silently pick one and commit to it.
 
 ## What batch 1 will contain when it arrives
 
