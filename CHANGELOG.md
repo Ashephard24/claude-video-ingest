@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.1.1 — 2026-04-22
+
+**Polish release: fixes three issues found in v2.1.0 field testing.**
+
+### Fixed
+
+- **Claude no longer claims the transcript is missing when it was uploaded.** Per-batch `transcript.md` files (~100 KB) arrive as fetchable attachments on claude.ai, not as inline content. The v2.1.0 `START-HERE-for-Claude.md` didn't tell Claude to tool-read attachments, so Claude skimmed its immediate context, didn't see the transcript text, and concluded it was missing. v2.1.1 explicitly instructs Claude to tool-read any listed `transcript.md` before making claims about transcript availability, and forbids answering questions from frames alone.
+- **Library table title column is readable again.** Titles were being truncated to 2-3 characters. The Title column now stretches to fill available width; Creator / Duration / Ingested columns size to content. Rows are taller to accommodate wrapped titles. Column widths also survive refresh now.
+
+### Added
+
+- **Help menu now has "Report a bug" and "View on GitHub" links** that open the repo's issue form and repo root in the default browser.
+
 ## 2.1.0 — 2026-04-22
 
 **Usability + accuracy polish based on v2.0.1 field testing.**
