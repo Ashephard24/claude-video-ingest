@@ -5,9 +5,17 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys as _sys
 from urllib.parse import parse_qs, urlparse
 
 from .errors import DependencyMissingError, InvalidURLError
+
+# Windows-only: suppress console windows from subprocess calls made by
+# the packaged binary. No effect on macOS/Linux.
+if _sys.platform == "win32":
+    _SUBPROCESS_NO_WINDOW_FLAGS = subprocess.CREATE_NO_WINDOW
+else:
+    _SUBPROCESS_NO_WINDOW_FLAGS = 0
 
 # Matches youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID, youtube.com/embed/ID
 _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be"}
@@ -192,6 +200,7 @@ def get_version(name: str) -> str | None:
             capture_output=True,
             text=True,
             timeout=5,
+            creationflags=_SUBPROCESS_NO_WINDOW_FLAGS,
         )
         output = (result.stdout or result.stderr).strip().split("\n")[0]
         return output if output else None

@@ -16,11 +16,19 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys as _sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import FrameExtractionError
 from .utils import check_command, require_command, seconds_to_timestamp
+
+# Windows-only: suppress console windows from subprocess calls made by
+# the packaged binary. No effect on macOS/Linux.
+if _sys.platform == "win32":
+    _SUBPROCESS_NO_WINDOW_FLAGS = subprocess.CREATE_NO_WINDOW
+else:
+    _SUBPROCESS_NO_WINDOW_FLAGS = 0
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +57,7 @@ def _run_ffmpeg(args: list[str], description: str) -> subprocess.CompletedProces
             capture_output=True,
             text=True,
             timeout=600,
+            creationflags=_SUBPROCESS_NO_WINDOW_FLAGS,
         )
     except subprocess.TimeoutExpired as e:
         raise FrameExtractionError(
@@ -94,6 +103,7 @@ def _detect_scene_timestamps(
         capture_output=True,
         text=True,
         timeout=600,
+        creationflags=_SUBPROCESS_NO_WINDOW_FLAGS,
     )
     # showinfo writes lines like: [Parsed_showinfo_1 @ ...] n:  0 pts: 123 pts_time:4.120 ...
     timestamps: list[float] = []
