@@ -580,14 +580,6 @@ class LibraryView(QWidget):
             item = _build_tree_item(path)
             self._contents_tree.addTopLevelItem(item)
 
-        # Expand all batch folders by default — user wants to see the
-        # files they'll drag.
-        for i in range(self._contents_tree.topLevelItemCount()):
-            top = self._contents_tree.topLevelItem(i)
-            path_str = top.data(0, Qt.ItemDataRole.UserRole)
-            if path_str and Path(path_str).name.startswith("batch-"):
-                top.setExpanded(True)
-
         # Size columns reasonably
         self._contents_tree.resizeColumnToContents(0)
         self._contents_tree.resizeColumnToContents(1)
