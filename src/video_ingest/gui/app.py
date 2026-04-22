@@ -31,6 +31,7 @@ from __future__ import annotations
 import sys
 import traceback
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
@@ -782,9 +783,12 @@ class MainWindow(QMainWindow):
         self._clear_completed_btn = QPushButton("Clear completed")
         self._clear_completed_btn.clicked.connect(self._on_clear_completed_clicked)
         self._clear_completed_btn.setEnabled(False)
+        self._clear_log_btn = QPushButton("Clear log")
+        self._clear_log_btn.clicked.connect(self._on_clear_log_clicked)
         queue_header_row.addWidget(queue_label)
         queue_header_row.addStretch()
         queue_header_row.addWidget(self._clear_completed_btn)
+        queue_header_row.addWidget(self._clear_log_btn)
         root.addLayout(queue_header_row)
 
         self._queue_list = QListWidget()
@@ -1083,7 +1087,16 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_worker_started(self, url: str) -> None:
-        self._append_log(f"\n=== Ingesting: {url} ===")
+        self._begin_run_log_section(url)
+
+    def _begin_run_log_section(self, url: str) -> None:
+        """Append a visual separator for a new ingest run to distinguish it
+        from previous runs in the log pane."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        separator = "─" * 60
+        self._log_output.append(f"\n{separator}")
+        self._log_output.append(f"[{timestamp}] Starting: {url}")
+        self._log_output.append(separator)
 
     @Slot(str, str)
     def _on_worker_finished(self, url: str, folder: str) -> None:
@@ -1179,6 +1192,12 @@ class MainWindow(QMainWindow):
 
     def _append_log(self, text: str) -> None:
         self._log_output.append(text)
+        scrollbar = self._log_output.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    @Slot()
+    def _on_clear_log_clicked(self) -> None:
+        self._log_output.clear()
 
 
 def _bold(font: QFont) -> QFont:
