@@ -526,18 +526,25 @@ class LibraryView(QWidget):
         self._contents_tree.setUniformRowHeights(True)
         right_layout.addWidget(self._contents_tree, stretch=1)
 
-        # Action row: open folder + drag hint (real drag comes in M6)
+        # Action row: open folder + delete + drag hint
         action_row = QHBoxLayout()
         self._open_video_folder_btn = QPushButton("Open this folder")
         self._open_video_folder_btn.setEnabled(False)
         self._open_video_folder_btn.clicked.connect(
             self._on_open_video_folder_clicked
         )
+        self._delete_video_btn = QPushButton("Delete")
+        self._delete_video_btn.setEnabled(False)
+        self._delete_video_btn.setToolTip(
+            "Move this video's folder to the OS recycle bin / trash."
+        )
+        self._delete_video_btn.clicked.connect(self._on_delete_clicked)
         drag_hint = QLabel(
             "Drag START-HERE into Claude first, then batch-1, batch-2, ..."
         )
         drag_hint.setStyleSheet("color: #666; font-style: italic;")
         action_row.addWidget(self._open_video_folder_btn)
+        action_row.addWidget(self._delete_video_btn)
         action_row.addStretch()
         action_row.addWidget(drag_hint)
         right_layout.addLayout(action_row)
@@ -575,6 +582,7 @@ class LibraryView(QWidget):
             self._detail_subtitle.setText("")
             self._contents_tree.clear()
             self._open_video_folder_btn.setEnabled(False)
+            self._delete_video_btn.setEnabled(False)
             return
 
         self._empty_label.setText(f"{len(self._entries)} video(s)")
@@ -632,6 +640,7 @@ class LibraryView(QWidget):
             self._detail_title.setText("Select a video to see its contents")
             self._detail_subtitle.setText("")
             self._open_video_folder_btn.setEnabled(False)
+            self._delete_video_btn.setEnabled(False)
             return
 
         src_idx = self._videos_proxy.mapToSource(current)
@@ -642,6 +651,7 @@ class LibraryView(QWidget):
             self._selected_folder = None
             self._contents_tree.clear()
             self._open_video_folder_btn.setEnabled(False)
+            self._delete_video_btn.setEnabled(False)
             return
 
         folder = library_root() / entry.folder_name
@@ -653,6 +663,32 @@ class LibraryView(QWidget):
         )
         self._populate_contents_tree(folder)
         self._open_video_folder_btn.setEnabled(folder.exists())
+        self._delete_video_btn.setEnabled(folder.exists())
+
+    @Slot()
+    def _on_delete_clicked(self) -> None:
+        if self._selected_folder is None:
+            return
+        folder_name = self._selected_folder.name
+        box = QMessageBox(self)
+        box.setWindowTitle("Delete video")
+        box.setText(
+            f"Move '{folder_name}' to the recycle bin?\n\n"
+            f"You can recover it from your recycle bin / trash if needed."
+        )
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
+        from ..library import delete_video_folder
+        try:
+            delete_video_folder(folder_name)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, "Delete failed", str(e))
+            return
+        self.refresh()
 
     @Slot(str)
     def _on_filter_changed(self, text: str) -> None:

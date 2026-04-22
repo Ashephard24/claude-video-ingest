@@ -578,6 +578,31 @@ def _md_escape(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ").strip()
 
 
+def delete_video_folder(folder_name: str) -> None:
+    """
+    Send a video's folder to the OS recycle bin / trash, then prune
+    its entry from both library.md and library.json.
+
+    Uses send2trash so the action is recoverable from the user's
+    desktop trash. Does NOT permanently delete.
+
+    Raises RuntimeError if the folder can't be trashed.
+    """
+    from send2trash import send2trash
+    root = ensure_library_root()
+    folder_path = root / folder_name
+    if not folder_path.exists():
+        # Already gone — just prune the index entries and move on.
+        reconcile_library_index()
+        return
+    try:
+        send2trash(str(folder_path))
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Could not move folder to trash: {e}") from e
+    # Reconcile both library.md and library.json to remove the entry.
+    reconcile_library_index()
+
+
 def reconcile_library_index() -> tuple[int, int]:
     """
     Prune rows in library.md for video folders that no longer exist.
