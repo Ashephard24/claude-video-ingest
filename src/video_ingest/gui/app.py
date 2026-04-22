@@ -35,12 +35,24 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QThread, Qt, QMimeData, Signal, Slot
-from PySide6.QtGui import QDesktopServices, QDrag, QFont
+from PySide6.QtCore import (
+    QObject,
+    QRegularExpression,
+    QSortFilterProxyModel,
+    QThread,
+    Qt,
+    QMimeData,
+    QModelIndex,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import QDesktopServices, QDrag, QFont, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -51,6 +63,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
+    QTableView,
     QTabWidget,
     QTextEdit,
     QTreeWidget,
@@ -365,19 +378,36 @@ class DraggableTreeWidget(QTreeWidget):
         return paths
 
 
+_LIB_COL_TITLE = 0
+_LIB_COL_CREATOR = 1
+_LIB_COL_DURATION = 2
+_LIB_COL_INGESTED = 3
+_LIB_ROLE_FOLDER_NAME = Qt.ItemDataRole.UserRole
+_LIB_ROLE_DURATION_SECONDS = Qt.ItemDataRole.UserRole + 1
+
+
+class _LibraryProxyModel(QSortFilterProxyModel):
+    """Filters on all columns; sorts Duration numerically by raw seconds."""
+
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:  # type: ignore[override]
+        if left.column() == _LIB_COL_DURATION and right.column() == _LIB_COL_DURATION:
+            l = left.data(_LIB_ROLE_DURATION_SECONDS)
+            r = right.data(_LIB_ROLE_DURATION_SECONDS)
+            if isinstance(l, int) and isinstance(r, int):
+                return l < r
+        return super().lessThan(left, right)
+
+
 class LibraryView(QWidget):
     """
     Second tab. Master-detail layout:
-        Left  — QListWidget of LibraryEntry rows, newest first.
+        Left  — QTableView of LibraryEntry rows (sortable by column,
+                filterable via search box), newest first by default.
         Right — QTreeWidget of the selected folder's contents.
 
     Data source: read_library_index() from ../library.py, which reads the
     JSON sidecar (library.json) with a disk-walk fallback. We call this
     on refresh() — which fires on tab switch and after each ingest.
-
-    Milestone 6 will add drag-out support to the right-side tree. For
-    now we expose an "Open folder" button that launches the OS file
-    manager as a bridge UX.
     """
 
     def __init__(self) -> None:
@@ -418,10 +448,59 @@ class LibraryView(QWidget):
         # Master-detail splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Left pane: list of videos
-        self._videos_list = QListWidget()
-        self._videos_list.currentRowChanged.connect(self._on_video_selected)
-        splitter.addWidget(self._videos_list)
+        # Left pane: search + sortable table of videos
+        left_pane = QWidget()
+        left_layout = QVBoxLayout(left_pane)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
+
+        self._filter_input = QLineEdit()
+        self._filter_input.setPlaceholderText("Filter by title or creator...")
+        self._filter_input.setClearButtonEnabled(True)
+        self._filter_input.textChanged.connect(self._on_filter_changed)
+        left_layout.addWidget(self._filter_input)
+
+        self._videos_model = QStandardItemModel(0, 4, self)
+        self._videos_model.setHorizontalHeaderLabels(
+            ["Title", "Creator", "Duration", "Ingested"]
+        )
+        self._videos_proxy = _LibraryProxyModel(self)
+        self._videos_proxy.setSourceModel(self._videos_model)
+        self._videos_proxy.setFilterKeyColumn(-1)  # filter across all columns
+        self._videos_proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
+        self._videos_table = QTableView()
+        self._videos_table.setModel(self._videos_proxy)
+        self._videos_table.setSortingEnabled(True)
+        self._videos_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self._videos_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self._videos_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._videos_table.verticalHeader().setVisible(False)
+        header = self._videos_table.horizontalHeader()
+        header.setSectionResizeMode(_LIB_COL_TITLE, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(
+            _LIB_COL_CREATOR, QHeaderView.ResizeMode.ResizeToContents
+        )
+        header.setSectionResizeMode(
+            _LIB_COL_DURATION, QHeaderView.ResizeMode.ResizeToContents
+        )
+        header.setSectionResizeMode(
+            _LIB_COL_INGESTED, QHeaderView.ResizeMode.ResizeToContents
+        )
+        # Default sort: newest first
+        self._videos_table.sortByColumn(_LIB_COL_INGESTED, Qt.SortOrder.DescendingOrder)
+        self._videos_table.selectionModel().currentRowChanged.connect(
+            self._on_table_current_row_changed
+        )
+        left_layout.addWidget(self._videos_table, stretch=1)
+
+        splitter.addWidget(left_pane)
 
         # Right pane: contents of selected video folder
         right_pane = QWidget()
@@ -480,16 +559,17 @@ class LibraryView(QWidget):
             # to the empty-label and show no entries.
             self._entries = []
             self._empty_label.setText(f"Could not read library: {e}")
+            self._videos_model.removeRows(0, self._videos_model.rowCount())
             return
 
-        # Repopulate left pane, preserving selection on the same folder
-        # if it still exists.
+        # Remember selection so we can restore it after repopulating.
         previously_selected = self._selected_folder
-        self._videos_list.clear()
+
+        self._videos_model.removeRows(0, self._videos_model.rowCount())
 
         if not self._entries:
             self._empty_label.setText(
-                f"No videos yet. Ingest one on the Queue tab."
+                "No videos yet. Ingest one on the Queue tab."
             )
             self._detail_title.setText("Select a video to see its contents")
             self._detail_subtitle.setText("")
@@ -499,36 +579,71 @@ class LibraryView(QWidget):
 
         self._empty_label.setText(f"{len(self._entries)} video(s)")
 
-        restore_row: int | None = None
-        for i, entry in enumerate(self._entries):
-            # Two-line display: title (bold-ish) then metadata
-            display = f"{entry.title}\n{entry.creator} • {entry.duration} • {entry.ingest_date}"
-            list_item = QListWidgetItem(display)
-            list_item.setData(Qt.ItemDataRole.UserRole, entry.folder_name)
-            self._videos_list.addItem(list_item)
+        for entry in self._entries:
+            title_item = QStandardItem(entry.title)
+            title_item.setData(entry.folder_name, _LIB_ROLE_FOLDER_NAME)
+            creator_item = QStandardItem(entry.creator)
+            duration_item = QStandardItem(entry.duration)
+            duration_item.setData(
+                _parse_duration_to_seconds(entry.duration),
+                _LIB_ROLE_DURATION_SECONDS,
+            )
+            ingested_item = QStandardItem(entry.ingest_date)
+            self._videos_model.appendRow(
+                [title_item, creator_item, duration_item, ingested_item]
+            )
 
-            if previously_selected is not None and (
-                library_root() / entry.folder_name == previously_selected
-            ):
-                restore_row = i
+        # Restore selection by folder_name, or default to first visible row.
+        target_row_source = None
+        if previously_selected is not None:
+            for i, entry in enumerate(self._entries):
+                if library_root() / entry.folder_name == previously_selected:
+                    target_row_source = i
+                    break
 
-        if restore_row is not None:
-            self._videos_list.setCurrentRow(restore_row)
-        else:
-            # Default to first row when the prior selection is gone.
-            self._videos_list.setCurrentRow(0)
+        if target_row_source is not None:
+            src_idx = self._videos_model.index(target_row_source, _LIB_COL_TITLE)
+            proxy_idx = self._videos_proxy.mapFromSource(src_idx)
+            if proxy_idx.isValid():
+                self._videos_table.selectionModel().setCurrentIndex(
+                    proxy_idx,
+                    self._videos_table.selectionModel().SelectionFlag.ClearAndSelect
+                    | self._videos_table.selectionModel().SelectionFlag.Rows,
+                )
+                return
+
+        if self._videos_proxy.rowCount() > 0:
+            first = self._videos_proxy.index(0, _LIB_COL_TITLE)
+            self._videos_table.selectionModel().setCurrentIndex(
+                first,
+                self._videos_table.selectionModel().SelectionFlag.ClearAndSelect
+                | self._videos_table.selectionModel().SelectionFlag.Rows,
+            )
 
     # ------------- Event handlers -------------
 
-    @Slot(int)
-    def _on_video_selected(self, row: int) -> None:
-        if row < 0 or row >= len(self._entries):
+    @Slot(QModelIndex, QModelIndex)
+    def _on_table_current_row_changed(
+        self, current: QModelIndex, _previous: QModelIndex
+    ) -> None:
+        if not current.isValid():
+            self._selected_folder = None
+            self._contents_tree.clear()
+            self._detail_title.setText("Select a video to see its contents")
+            self._detail_subtitle.setText("")
+            self._open_video_folder_btn.setEnabled(False)
+            return
+
+        src_idx = self._videos_proxy.mapToSource(current)
+        title_idx = self._videos_model.index(src_idx.row(), _LIB_COL_TITLE)
+        folder_name = self._videos_model.data(title_idx, _LIB_ROLE_FOLDER_NAME)
+        entry = next((e for e in self._entries if e.folder_name == folder_name), None)
+        if entry is None:
             self._selected_folder = None
             self._contents_tree.clear()
             self._open_video_folder_btn.setEnabled(False)
             return
 
-        entry = self._entries[row]
         folder = library_root() / entry.folder_name
         self._selected_folder = folder
 
@@ -538,6 +653,17 @@ class LibraryView(QWidget):
         )
         self._populate_contents_tree(folder)
         self._open_video_folder_btn.setEnabled(folder.exists())
+
+    @Slot(str)
+    def _on_filter_changed(self, text: str) -> None:
+        # Escape regex metacharacters in the user's literal input.
+        pattern = QRegularExpression.escape(text)
+        self._videos_proxy.setFilterRegularExpression(
+            QRegularExpression(
+                pattern,
+                QRegularExpression.PatternOption.CaseInsensitiveOption,
+            )
+        )
 
     @Slot()
     def _on_open_root_clicked(self) -> None:
@@ -596,6 +722,24 @@ def _batch_sort_key(name: str) -> tuple[int, str]:
         return (n, name)
     except (IndexError, ValueError):
         return (10**9, name)
+
+
+def _parse_duration_to_seconds(text: str) -> int:
+    """Parse a duration string like '1:02:05' or '2:05' into seconds."""
+    parts = text.strip().split(":")
+    try:
+        ints = [int(p) for p in parts]
+    except ValueError:
+        return 0
+    if len(ints) == 3:
+        h, m, s = ints
+        return h * 3600 + m * 60 + s
+    if len(ints) == 2:
+        m, s = ints
+        return m * 60 + s
+    if len(ints) == 1:
+        return ints[0]
+    return 0
 
 
 def _build_tree_item(path: Path) -> QTreeWidgetItem:
