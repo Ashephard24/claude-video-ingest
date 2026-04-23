@@ -74,7 +74,10 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(480)
+        # Wider so the Library location field can show a typical absolute
+        # path (e.g. C:\Users\<User>\Documents\claude-video-library) in
+        # full, plus the Browse / Reset / Open buttons on its right.
+        self.setMinimumWidth(720)
 
         self._settings = load_settings()
         self._build_ui()
@@ -145,9 +148,14 @@ class SettingsDialog(QDialog):
         # default"; we surface that default here so the user sees a real
         # path in the field.
         self._lib_path_edit = QLineEdit(str(library_root()))
-        self._lib_path_edit.setToolTip(
-            "Where ingested video folders and the library index live."
-        )
+        # Make sure the field can absorb extra horizontal room so a full
+        # path is readable at a glance. Minimum width matters for small
+        # default dialog widths; stretch=1 in the layout handles growth.
+        self._lib_path_edit.setMinimumWidth(340)
+        # Keep the tooltip synced with the current value so hovering
+        # reveals the full path even if the field is clipped.
+        self._lib_path_edit.setToolTip(self._lib_path_edit.text())
+        self._lib_path_edit.textChanged.connect(self._lib_path_edit.setToolTip)
         browse_btn = QPushButton("Browse...")
         browse_btn.clicked.connect(self._on_browse_library_clicked)
         reset_btn = QPushButton("Reset to default")
