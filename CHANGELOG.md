@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.1.2 — 2026-04-23
+
+**Polish release: accuracy ambiguity-flagging, library rework for scale, configurable library location.**
+
+### Changed
+
+- **Library view reworked for scale.** Replaced the four-column table (where long titles truncated to "Ca...") with a two-line list: title on top, `Creator • Duration • Ingested` below. Added explicit Sort-by controls (Title / Creator / Duration / Ingested, with ascending/descending toggle), filter-as-you-type, and keyboard navigation (arrows to move, Enter to open folder, Delete to move to recycle bin, Ctrl+F to focus the filter box). Designed for hundreds of videos rather than tens.
+
+### Added
+
+- **Claude now flags ambiguity in speaker attribution** instead of guessing. YouTube transcripts don't label who is speaking, so pronouns like "I" and "he" are often ambiguous. The updated `START-HERE-for-Claude.md` instructs Claude to acknowledge the ambiguity and distinguish inferences from confirmed facts when the transcript doesn't clearly attribute an action to a named person. This addresses confident-but-wrong answers observed in v2.1.1 testing (e.g. swapping which of two people performed an action).
+- **Library location is now configurable in Settings.** Previously hardcoded to `~/Documents/claude-video-library/`. Users can now point the library at an external drive, network share, or custom folder. Existing videos are NOT moved automatically — a warning in the Settings dialog makes this explicit, with instructions to move folders manually before or after the change. Auto-migration with progress reporting may come in a future release.
+
+### Known limitations (carried from v2.1.0)
+
+Frame extraction is sparse (~60 frames across a full video), and YouTube captions carry no speaker tags. Claude can cross-reference frames with the transcript but can't watch the video itself — the current consumer AI product doesn't yet support video uploads. If you need unambiguous attribution, a follow-up question with a specific timestamp usually gets Claude to the right answer. A v3 exploration of automated frame descriptions (via vision model at ingest time) is parked as a future direction if video upload support doesn't arrive first.
+
 ## 2.1.1 — 2026-04-22
 
 **Polish release: fixes three issues found in v2.1.0 field testing.**
