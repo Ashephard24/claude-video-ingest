@@ -410,6 +410,10 @@ class _LibraryRowWidget(QWidget):
     Custom row widget for the library list. Two-line layout:
       Line 1: Title (bold, full width)
       Line 2: 'Creator • Duration • Ingested' (muted)
+
+    Selection-aware: call set_selected(True/False) to swap the label
+    colors against Qt's highlighted-text palette, so the subtitle stays
+    readable over the blue selection background.
     """
 
     def __init__(self, entry: LibraryEntry) -> None:
@@ -431,11 +435,29 @@ class _LibraryRowWidget(QWidget):
             f"{entry.creator}  •  {entry.duration}  •  {entry.ingest_date}"
         )
         self._subtitle = QLabel(subtitle_text)
-        self._subtitle.setStyleSheet("color: #666;")
         sub_font = self._subtitle.font()
         sub_font.setPointSizeF(max(sub_font.pointSizeF() - 1, 8.0))
         self._subtitle.setFont(sub_font)
         layout.addWidget(self._subtitle)
+
+        # Cache the palette colors at construction so set_selected() is
+        # cheap. Qt palette values respect the active system theme, so
+        # this correctly adapts to light/dark without hardcoded hex.
+        pal = self.palette()
+        self._title_normal_color = pal.text().color().name()
+        self._subtitle_normal_color = "#666"  # muted gray, matches v2.1.2
+        self._selected_color = pal.highlightedText().color().name()
+
+        self.set_selected(False)
+
+    def set_selected(self, selected: bool) -> None:
+        """Swap label colors to stay readable over the selection highlight."""
+        if selected:
+            self._title.setStyleSheet(f"color: {self._selected_color};")
+            self._subtitle.setStyleSheet(f"color: {self._selected_color};")
+        else:
+            self._title.setStyleSheet(f"color: {self._title_normal_color};")
+            self._subtitle.setStyleSheet(f"color: {self._subtitle_normal_color};")
 
 
 class _LibraryListWidget(QListWidget):
@@ -562,6 +584,9 @@ class LibraryView(QWidget):
         self._list_widget.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self._list_widget.setAlternatingRowColors(True)
         self._list_widget.currentRowChanged.connect(self._on_list_current_row_changed)
+        self._list_widget.itemSelectionChanged.connect(
+            self._update_row_selection_styles
+        )
         self._list_widget.enter_pressed.connect(self._on_enter_pressed)
         self._list_widget.delete_pressed.connect(self._on_delete_pressed)
         left_layout.addWidget(self._list_widget, stretch=1)
@@ -711,6 +736,18 @@ class LibraryView(QWidget):
                     target_row = i
                     break
         self._list_widget.setCurrentRow(target_row)
+        self._update_row_selection_styles()
+
+    @Slot()
+    def _update_row_selection_styles(self) -> None:
+        """Walk every row widget and toggle its selected-state colors so
+        the title/subtitle labels stay readable over the selection
+        highlight."""
+        for i in range(self._list_widget.count()):
+            item = self._list_widget.item(i)
+            widget = self._list_widget.itemWidget(item)
+            if isinstance(widget, _LibraryRowWidget):
+                widget.set_selected(item.isSelected())
 
     def _clear_detail_pane(self) -> None:
         """Blank out the right-pane detail view when nothing is selected."""
