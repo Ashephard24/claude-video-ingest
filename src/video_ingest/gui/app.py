@@ -37,22 +37,25 @@ from pathlib import Path
 
 from PySide6.QtCore import (
     QObject,
-    QRegularExpression,
-    QSortFilterProxyModel,
     QThread,
     Qt,
     QMimeData,
-    QModelIndex,
     Signal,
     Slot,
 )
-from PySide6.QtGui import QDesktopServices, QDrag, QFont, QStandardItem, QStandardItemModel
+from PySide6.QtGui import (
+    QDesktopServices,
+    QDrag,
+    QFont,
+    QKeyEvent,
+    QKeySequence,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QApplication,
+    QComboBox,
     QDialog,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -62,8 +65,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSplitter,
-    QTableView,
     QTabWidget,
     QTextEdit,
     QTreeWidget,
@@ -386,42 +389,104 @@ class DraggableTreeWidget(QTreeWidget):
         return paths
 
 
-_LIB_COL_TITLE = 0
-_LIB_COL_CREATOR = 1
-_LIB_COL_DURATION = 2
-_LIB_COL_INGESTED = 3
 _LIB_ROLE_FOLDER_NAME = Qt.ItemDataRole.UserRole
-_LIB_ROLE_DURATION_SECONDS = Qt.ItemDataRole.UserRole + 1
+
+# Sort key constants for the sort-by combobox.
+_LIB_SORT_INGESTED = "ingested"
+_LIB_SORT_TITLE = "title"
+_LIB_SORT_CREATOR = "creator"
+_LIB_SORT_DURATION = "duration"
+
+_LIB_SORT_CHOICES: list[tuple[str, str]] = [
+    (_LIB_SORT_INGESTED, "Ingested date"),
+    (_LIB_SORT_TITLE, "Title"),
+    (_LIB_SORT_CREATOR, "Creator"),
+    (_LIB_SORT_DURATION, "Duration"),
+]
 
 
-class _LibraryProxyModel(QSortFilterProxyModel):
-    """Filters on all columns; sorts Duration numerically by raw seconds."""
+class _LibraryRowWidget(QWidget):
+    """
+    Custom row widget for the library list. Two-line layout:
+      Line 1: Title (bold, full width)
+      Line 2: 'Creator • Duration • Ingested' (muted)
+    """
 
-    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:  # type: ignore[override]
-        if left.column() == _LIB_COL_DURATION and right.column() == _LIB_COL_DURATION:
-            l = left.data(_LIB_ROLE_DURATION_SECONDS)
-            r = right.data(_LIB_ROLE_DURATION_SECONDS)
-            if isinstance(l, int) and isinstance(r, int):
-                return l < r
-        return super().lessThan(left, right)
+    def __init__(self, entry: LibraryEntry) -> None:
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(2)
+
+        self._title = QLabel(entry.title)
+        title_font = self._title.font()
+        title_font.setBold(True)
+        self._title.setFont(title_font)
+        # Don't elide unless we truly have to — the stretched list has
+        # room, and the whole point of this rework is visible titles.
+        self._title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(self._title)
+
+        subtitle_text = (
+            f"{entry.creator}  •  {entry.duration}  •  {entry.ingest_date}"
+        )
+        self._subtitle = QLabel(subtitle_text)
+        self._subtitle.setStyleSheet("color: #666;")
+        sub_font = self._subtitle.font()
+        sub_font.setPointSizeF(max(sub_font.pointSizeF() - 1, 8.0))
+        self._subtitle.setFont(sub_font)
+        layout.addWidget(self._subtitle)
+
+
+class _LibraryListWidget(QListWidget):
+    """
+    QListWidget subclass that emits signals for Enter (open) and Delete
+    (delete). Arrow-key navigation is inherited from QListWidget.
+    """
+
+    enter_pressed = Signal()
+    delete_pressed = Signal()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
+        key = event.key()
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.enter_pressed.emit()
+            event.accept()
+            return
+        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            self.delete_pressed.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class LibraryView(QWidget):
     """
     Second tab. Master-detail layout:
-        Left  — QTableView of LibraryEntry rows (sortable by column,
-                filterable via search box), newest first by default.
-        Right — QTreeWidget of the selected folder's contents.
+        Left  — two-line QListWidget of LibraryEntry rows with filter-
+                as-you-type, explicit sort-by dropdown + direction
+                toggle, and keyboard navigation (Enter = open folder,
+                Delete = move to recycle bin, Ctrl+F = focus filter).
+        Right — QTreeWidget of the selected folder's contents +
+                detail pane with YouTube link, Open / Delete buttons.
 
     Data source: read_library_index() from ../library.py, which reads the
     JSON sidecar (library.json) with a disk-walk fallback. We call this
     on refresh() — which fires on tab switch and after each ingest.
+
+    Sort/filter are applied in-memory to self._entries → self._visible_entries.
+    We never re-read from disk on a filter or sort change.
     """
 
     def __init__(self) -> None:
         super().__init__()
         self._entries: list[LibraryEntry] = []
+        # Filtered + sorted subset currently shown in the list widget.
+        # Rows in _list_widget are 1:1 with this list.
+        self._visible_entries: list[LibraryEntry] = []
         self._selected_folder: Path | None = None
+        self._sort_key: str = _LIB_SORT_INGESTED
+        self._sort_descending: bool = True  # newest first by default
         self._build_ui()
 
     # ------------- UI construction -------------
@@ -456,7 +521,7 @@ class LibraryView(QWidget):
         # Master-detail splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Left pane: search + sortable table of videos
+        # Left pane: filter box + sort controls + two-line list
         left_pane = QWidget()
         left_layout = QVBoxLayout(left_pane)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -468,48 +533,43 @@ class LibraryView(QWidget):
         self._filter_input.textChanged.connect(self._on_filter_changed)
         left_layout.addWidget(self._filter_input)
 
-        self._videos_model = QStandardItemModel(0, 4, self)
-        self._videos_model.setHorizontalHeaderLabels(
-            ["Title", "Creator", "Duration", "Ingested"]
+        sort_row = QHBoxLayout()
+        sort_row.setContentsMargins(0, 0, 0, 0)
+        sort_row.setSpacing(6)
+        sort_label = QLabel("Sort by:")
+        sort_label.setStyleSheet("color: #666;")
+        self._sort_combo = QComboBox()
+        for value, label in _LIB_SORT_CHOICES:
+            self._sort_combo.addItem(label, value)
+        # Pre-select the default (ingested).
+        for i in range(self._sort_combo.count()):
+            if self._sort_combo.itemData(i) == self._sort_key:
+                self._sort_combo.setCurrentIndex(i)
+                break
+        self._sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        self._sort_direction_btn = QPushButton("▼")
+        self._sort_direction_btn.setFixedWidth(32)
+        self._sort_direction_btn.setToolTip(
+            "Toggle sort direction (ascending / descending)."
         )
-        self._videos_proxy = _LibraryProxyModel(self)
-        self._videos_proxy.setSourceModel(self._videos_model)
-        self._videos_proxy.setFilterKeyColumn(-1)  # filter across all columns
-        self._videos_proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._sort_direction_btn.clicked.connect(self._on_sort_direction_clicked)
+        sort_row.addWidget(sort_label)
+        sort_row.addWidget(self._sort_combo, stretch=1)
+        sort_row.addWidget(self._sort_direction_btn)
+        left_layout.addLayout(sort_row)
 
-        self._videos_table = QTableView()
-        self._videos_table.setModel(self._videos_proxy)
-        self._videos_table.setSortingEnabled(True)
-        self._videos_table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows
-        )
-        self._videos_table.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection
-        )
-        self._videos_table.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
-        self._videos_table.verticalHeader().setVisible(False)
-        # Taller default rows so wrapped titles don't clip.
-        self._videos_table.verticalHeader().setDefaultSectionSize(32)
-        self._videos_table.setWordWrap(True)
-        header = self._videos_table.horizontalHeader()
-        header.setSectionResizeMode(_LIB_COL_TITLE, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(
-            _LIB_COL_CREATOR, QHeaderView.ResizeMode.ResizeToContents
-        )
-        header.setSectionResizeMode(
-            _LIB_COL_DURATION, QHeaderView.ResizeMode.ResizeToContents
-        )
-        header.setSectionResizeMode(
-            _LIB_COL_INGESTED, QHeaderView.ResizeMode.ResizeToContents
-        )
-        # Default sort: newest first
-        self._videos_table.sortByColumn(_LIB_COL_INGESTED, Qt.SortOrder.DescendingOrder)
-        self._videos_table.selectionModel().currentRowChanged.connect(
-            self._on_table_current_row_changed
-        )
-        left_layout.addWidget(self._videos_table, stretch=1)
+        self._list_widget = _LibraryListWidget()
+        self._list_widget.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self._list_widget.setAlternatingRowColors(True)
+        self._list_widget.currentRowChanged.connect(self._on_list_current_row_changed)
+        self._list_widget.enter_pressed.connect(self._on_enter_pressed)
+        self._list_widget.delete_pressed.connect(self._on_delete_pressed)
+        left_layout.addWidget(self._list_widget, stretch=1)
+
+        # Ctrl+F: focus the filter box. Parent on the LibraryView so the
+        # shortcut is live whenever this tab is shown.
+        self._focus_filter_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        self._focus_filter_shortcut.activated.connect(self._filter_input.setFocus)
 
         splitter.addWidget(left_pane)
 
@@ -575,119 +635,102 @@ class LibraryView(QWidget):
     # ------------- Public API -------------
 
     def refresh(self) -> None:
-        """Reload the entries list from disk and repopulate the left pane."""
-        # Save column widths before the model rebuild so auto-sized columns
-        # don't momentarily collapse while rows are swapped out. The Stretch
-        # column ignores setColumnWidth and refills automatically.
-        saved_widths = {
-            col: self._videos_table.columnWidth(col)
-            for col in range(self._videos_model.columnCount())
-        }
-
+        """Reload the entries list from disk and repopulate the list widget."""
         try:
             self._entries = read_library_index()
         except Exception as e:  # noqa: BLE001
-            # We never want a library-read error to crash the GUI — log
-            # to the empty-label and show no entries.
+            # We never want a library-read error to crash the GUI.
             self._entries = []
             self._empty_label.setText(f"Could not read library: {e}")
-            self._videos_model.removeRows(0, self._videos_model.rowCount())
+            self._list_widget.clear()
+            self._visible_entries = []
+            self._clear_detail_pane()
             return
 
-        # Remember selection so we can restore it after repopulating.
-        previously_selected = self._selected_folder
+        self._apply_sort_and_filter(
+            preserve_selected_folder=self._selected_folder
+        )
 
-        self._videos_model.removeRows(0, self._videos_model.rowCount())
+    def _apply_sort_and_filter(self, preserve_selected_folder: Path | None) -> None:
+        """
+        Recompute self._visible_entries from self._entries using the
+        current filter text + sort key/direction, then repopulate the
+        list widget. Preserves selection by folder_name if possible.
+        """
+        filter_text = self._filter_input.text().strip().lower()
 
-        if not self._entries:
-            self._empty_label.setText(
-                "No videos yet. Ingest one on the Queue tab."
-            )
-            self._detail_title.setText("Select a video to see its contents")
-            self._detail_subtitle.setText("")
-            self._youtube_link_label.setVisible(False)
-            self._contents_tree.clear()
-            self._open_video_folder_btn.setEnabled(False)
-            self._delete_video_btn.setEnabled(False)
+        if filter_text:
+            filtered = [
+                e for e in self._entries
+                if filter_text in e.title.lower() or filter_text in e.creator.lower()
+            ]
+        else:
+            filtered = list(self._entries)
+
+        key_fn = {
+            _LIB_SORT_TITLE: lambda e: e.title.lower(),
+            _LIB_SORT_CREATOR: lambda e: e.creator.lower(),
+            _LIB_SORT_DURATION: lambda e: _parse_duration_to_seconds(e.duration),
+            _LIB_SORT_INGESTED: lambda e: e.ingest_date,
+        }[self._sort_key]
+        filtered.sort(key=key_fn, reverse=self._sort_descending)
+
+        self._visible_entries = filtered
+
+        # Update the count label.
+        total = len(self._entries)
+        if not total:
+            self._empty_label.setText("No videos yet. Ingest one on the Queue tab.")
+        elif filter_text and len(filtered) != total:
+            self._empty_label.setText(f"{len(filtered)} of {total} videos")
+        else:
+            self._empty_label.setText(f"{total} video(s)")
+
+        # Rebuild the list widget. QListWidget handles its own item
+        # creation; we attach a custom row widget for each.
+        self._list_widget.clear()
+        for entry in self._visible_entries:
+            item = QListWidgetItem(self._list_widget)
+            row = _LibraryRowWidget(entry)
+            item.setSizeHint(row.sizeHint())
+            item.setData(_LIB_ROLE_FOLDER_NAME, entry.folder_name)
+            self._list_widget.addItem(item)
+            self._list_widget.setItemWidget(item, row)
+
+        # Restore selection by folder_name if still visible; otherwise
+        # select the first row. Clear detail pane if list is empty.
+        if not self._visible_entries:
+            self._clear_detail_pane()
             return
 
-        self._empty_label.setText(f"{len(self._entries)} video(s)")
-
-        for entry in self._entries:
-            title_item = QStandardItem(entry.title)
-            title_item.setData(entry.folder_name, _LIB_ROLE_FOLDER_NAME)
-            creator_item = QStandardItem(entry.creator)
-            duration_item = QStandardItem(entry.duration)
-            duration_item.setData(
-                _parse_duration_to_seconds(entry.duration),
-                _LIB_ROLE_DURATION_SECONDS,
-            )
-            ingested_item = QStandardItem(entry.ingest_date)
-            self._videos_model.appendRow(
-                [title_item, creator_item, duration_item, ingested_item]
-            )
-
-        # Restore selection by folder_name, or default to first visible row.
-        target_row_source = None
-        if previously_selected is not None:
-            for i, entry in enumerate(self._entries):
-                if library_root() / entry.folder_name == previously_selected:
-                    target_row_source = i
+        target_row = 0
+        if preserve_selected_folder is not None:
+            target_name = preserve_selected_folder.name
+            for i, entry in enumerate(self._visible_entries):
+                if entry.folder_name == target_name:
+                    target_row = i
                     break
+        self._list_widget.setCurrentRow(target_row)
 
-        # Restore prior column widths where we had them. The Stretch column
-        # is re-filled by Qt; these calls are no-ops for it.
-        for col, width in saved_widths.items():
-            if width > 0:
-                self._videos_table.setColumnWidth(col, width)
-
-        if target_row_source is not None:
-            src_idx = self._videos_model.index(target_row_source, _LIB_COL_TITLE)
-            proxy_idx = self._videos_proxy.mapFromSource(src_idx)
-            if proxy_idx.isValid():
-                self._videos_table.selectionModel().setCurrentIndex(
-                    proxy_idx,
-                    self._videos_table.selectionModel().SelectionFlag.ClearAndSelect
-                    | self._videos_table.selectionModel().SelectionFlag.Rows,
-                )
-                return
-
-        if self._videos_proxy.rowCount() > 0:
-            first = self._videos_proxy.index(0, _LIB_COL_TITLE)
-            self._videos_table.selectionModel().setCurrentIndex(
-                first,
-                self._videos_table.selectionModel().SelectionFlag.ClearAndSelect
-                | self._videos_table.selectionModel().SelectionFlag.Rows,
-            )
+    def _clear_detail_pane(self) -> None:
+        """Blank out the right-pane detail view when nothing is selected."""
+        self._selected_folder = None
+        self._contents_tree.clear()
+        self._detail_title.setText("Select a video to see its contents")
+        self._detail_subtitle.setText("")
+        self._youtube_link_label.setVisible(False)
+        self._open_video_folder_btn.setEnabled(False)
+        self._delete_video_btn.setEnabled(False)
 
     # ------------- Event handlers -------------
 
-    @Slot(QModelIndex, QModelIndex)
-    def _on_table_current_row_changed(
-        self, current: QModelIndex, _previous: QModelIndex
-    ) -> None:
-        if not current.isValid():
-            self._selected_folder = None
-            self._contents_tree.clear()
-            self._detail_title.setText("Select a video to see its contents")
-            self._detail_subtitle.setText("")
-            self._youtube_link_label.setVisible(False)
-            self._open_video_folder_btn.setEnabled(False)
-            self._delete_video_btn.setEnabled(False)
+    @Slot(int)
+    def _on_list_current_row_changed(self, row: int) -> None:
+        if row < 0 or row >= len(self._visible_entries):
+            self._clear_detail_pane()
             return
 
-        src_idx = self._videos_proxy.mapToSource(current)
-        title_idx = self._videos_model.index(src_idx.row(), _LIB_COL_TITLE)
-        folder_name = self._videos_model.data(title_idx, _LIB_ROLE_FOLDER_NAME)
-        entry = next((e for e in self._entries if e.folder_name == folder_name), None)
-        if entry is None:
-            self._selected_folder = None
-            self._contents_tree.clear()
-            self._youtube_link_label.setVisible(False)
-            self._open_video_folder_btn.setEnabled(False)
-            self._delete_video_btn.setEnabled(False)
-            return
-
+        entry = self._visible_entries[row]
         folder = library_root() / entry.folder_name
         self._selected_folder = folder
 
@@ -732,15 +775,39 @@ class LibraryView(QWidget):
         self.refresh()
 
     @Slot(str)
-    def _on_filter_changed(self, text: str) -> None:
-        # Escape regex metacharacters in the user's literal input.
-        pattern = QRegularExpression.escape(text)
-        self._videos_proxy.setFilterRegularExpression(
-            QRegularExpression(
-                pattern,
-                QRegularExpression.PatternOption.CaseInsensitiveOption,
-            )
+    def _on_filter_changed(self, _text: str) -> None:
+        # Reapply sort+filter in memory. Cheap even for hundreds of rows.
+        self._apply_sort_and_filter(
+            preserve_selected_folder=self._selected_folder
         )
+
+    @Slot(int)
+    def _on_sort_changed(self, _index: int) -> None:
+        new_key = self._sort_combo.currentData()
+        if new_key == self._sort_key:
+            return
+        self._sort_key = new_key
+        self._apply_sort_and_filter(
+            preserve_selected_folder=self._selected_folder
+        )
+
+    @Slot()
+    def _on_sort_direction_clicked(self) -> None:
+        self._sort_descending = not self._sort_descending
+        self._sort_direction_btn.setText("▼" if self._sort_descending else "▲")
+        self._apply_sort_and_filter(
+            preserve_selected_folder=self._selected_folder
+        )
+
+    @Slot()
+    def _on_enter_pressed(self) -> None:
+        """Enter key on the list → open the selected video's folder."""
+        self._on_open_video_folder_clicked()
+
+    @Slot()
+    def _on_delete_pressed(self) -> None:
+        """Delete key on the list → run the existing delete-with-trash flow."""
+        self._on_delete_clicked()
 
     @Slot()
     def _on_open_root_clicked(self) -> None:
