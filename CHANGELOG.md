@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.3 — 2026-04-23
+
+**Bug fixes for library readability (v2.1.2 smoke test findings).**
+
+### Fixed
+
+- **Selected library rows are readable again.** The custom two-line row widgets introduced in v2.1.2 didn't swap their text colors when selected, so the bold title and muted-gray subtitle sat on top of Qt's blue selection background with near-zero contrast. Row labels now use the system highlighted-text palette color when selected, and revert on deselection. Works on light and dark system themes.
+- **Long video titles no longer truncate with an ellipsis.** Titles in library rows now wrap to a second line if they don't fit on one. Rows grow vertically as needed. Titles longer than 2 lines still elide on the second line.
+- **Library pane splitter actually resizes.** v2.1.2's splitter collapsed the library pane to nothing when dragged and couldn't be pulled back out. Both panes now have a minimum width and cannot be fully collapsed. Users can drag the handle to widen the library list when they have long titles.
+- **Settings dialog shows the full library path.** The Library location field was narrow enough that most of the path was hidden. The dialog is wider and the field stretches to fill available horizontal space. A tooltip also shows the full path on hover.
+
 ## 2.1.2 — 2026-04-23
 
 **Polish release: accuracy ambiguity-flagging, library rework for scale, configurable library location.**
