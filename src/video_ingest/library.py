@@ -280,6 +280,16 @@ When I ask a question, please follow these rules:
    disagree, or a frame contradicts the transcript, say so explicitly
    and show me both. Don't silently pick one and commit to it.
 
+5. **Flag speaker-attribution ambiguity.** YouTube transcripts typically
+   do not label who is speaking. When the transcript uses a pronoun
+   ("I", "he", "they") or an unnamed speaker and the referenced action
+   isn't clearly attributable to a specific named person in the video,
+   explicitly flag that ambiguity in your answer. You may still offer
+   your best inference, but distinguish between what the transcript
+   states directly and what you're inferring. Never present an inference
+   as a confirmed fact. If I can verify via the video itself, feel free
+   to invite me to confirm.
+
 Thanks. Ready when you are.
 """
     else:
@@ -388,6 +398,16 @@ user asks questions:
 4. **Flag ambiguity; don't guess.** If two parts of the transcript
    disagree, or a frame contradicts the transcript, say so explicitly
    and show the user both. Don't silently pick one and commit to it.
+
+5. **Flag speaker-attribution ambiguity.** YouTube transcripts typically
+   do not label who is speaking. When the transcript uses a pronoun
+   ("I", "he", "they") or an unnamed speaker and the referenced action
+   isn't clearly attributable to a specific named person in the video,
+   explicitly flag that ambiguity in your answer. You may still offer
+   your best inference, but distinguish between what the transcript
+   states directly and what you're inferring. Never present an inference
+   as a confirmed fact. If the user can verify via the video itself,
+   feel free to invite them to confirm.
 
 ## What batch 1 will contain when it arrives
 

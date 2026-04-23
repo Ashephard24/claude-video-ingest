@@ -797,6 +797,11 @@ class TestBatchPlanning:
             "single-batch prompt must tell Claude to use the file-read tool"
         assert "frames alone" in single_prompt, \
             "single-batch prompt must forbid answering from frames alone"
+        # v2.1.2: ambiguity-flagging rule for pronoun / speaker attribution
+        assert "pronoun" in single_prompt, \
+            "single-batch prompt must address pronoun attribution ambiguity"
+        assert "inference" in single_prompt, \
+            "single-batch prompt must distinguish inferences from confirmed facts"
 
         # Multi-batch case
         frames_src_b = tmp_path / "src_big"
@@ -826,6 +831,11 @@ class TestBatchPlanning:
             "multi-batch prompt must tell Claude to use the file-read tool"
         assert "frames alone" in multi_prompt, \
             "multi-batch prompt must forbid answering from frames alone"
+        # v2.1.2: ambiguity-flagging rule for pronoun / speaker attribution
+        assert "pronoun" in multi_prompt, \
+            "multi-batch prompt must address pronoun attribution ambiguity"
+        assert "inference" in multi_prompt, \
+            "multi-batch prompt must distinguish inferences from confirmed facts"
         # The three-state structure from v1.2.2 must still be intact —
         # the new paragraphs are additions, not replacements.
         assert "STATE A" in multi_prompt
