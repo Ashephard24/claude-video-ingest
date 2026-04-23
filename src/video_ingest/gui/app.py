@@ -426,9 +426,19 @@ class _LibraryRowWidget(QWidget):
         title_font = self._title.font()
         title_font.setBold(True)
         self._title.setFont(title_font)
-        # Don't elide unless we truly have to — the stretched list has
-        # room, and the whole point of this rework is visible titles.
-        self._title.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        # Word-wrap long titles. We cap at 2 lines via setMaximumHeight
+        # below; titles longer than 2 lines elide on the second line
+        # thanks to the label's default elide behavior.
+        self._title.setWordWrap(True)
+        self._title.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+        )
+        title_fm = self._title.fontMetrics()
+        title_line_h = title_fm.lineSpacing()
+        # Reserve exactly 2 lines for the title regardless of its actual
+        # length. Short titles leave whitespace; long titles wrap into it.
+        self._title.setMinimumHeight(title_line_h * 2)
+        self._title.setMaximumHeight(title_line_h * 2)
         layout.addWidget(self._title)
 
         subtitle_text = (
@@ -440,6 +450,16 @@ class _LibraryRowWidget(QWidget):
         self._subtitle.setFont(sub_font)
         layout.addWidget(self._subtitle)
 
+        # Compute a total sizeHint height that always reserves room for
+        # 2 title lines + 1 subtitle line + layout padding. Consumers
+        # (QListWidget) call sizeHint() when setting item.setSizeHint().
+        sub_fm = self._subtitle.fontMetrics()
+        padding = layout.contentsMargins().top() + layout.contentsMargins().bottom()
+        spacing = layout.spacing()
+        self._row_height_hint = (
+            title_line_h * 2 + sub_fm.lineSpacing() + padding + spacing
+        )
+
         # Cache the palette colors at construction so set_selected() is
         # cheap. Qt palette values respect the active system theme, so
         # this correctly adapts to light/dark without hardcoded hex.
@@ -449,6 +469,11 @@ class _LibraryRowWidget(QWidget):
         self._selected_color = pal.highlightedText().color().name()
 
         self.set_selected(False)
+
+    def sizeHint(self):  # type: ignore[override]
+        base = super().sizeHint()
+        base.setHeight(max(base.height(), self._row_height_hint))
+        return base
 
     def set_selected(self, selected: bool) -> None:
         """Swap label colors to stay readable over the selection highlight."""
@@ -540,8 +565,11 @@ class LibraryView(QWidget):
         header_row.addWidget(self._open_root_btn)
         root.addLayout(header_row)
 
-        # Master-detail splitter
+        # Master-detail splitter. We prevent either pane from fully
+        # collapsing and give both a reasonable minimum width so the
+        # handle stays draggable in both directions.
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
 
         # Left pane: filter box + sort controls + two-line list
         left_pane = QWidget()
@@ -652,9 +680,15 @@ class LibraryView(QWidget):
         right_layout.addLayout(action_row)
 
         splitter.addWidget(right_pane)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
-        splitter.setSizes([280, 540])
+        # Give both panes a usable minimum so the handle stays draggable
+        # in both directions and the library pane can't be collapsed.
+        left_pane.setMinimumWidth(200)
+        right_pane.setMinimumWidth(200)
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        # Wider default for the library pane so long titles have room
+        # before wrapping kicks in.
+        splitter.setSizes([400, 420])
         root.addWidget(splitter, stretch=1)
 
     # ------------- Public API -------------
