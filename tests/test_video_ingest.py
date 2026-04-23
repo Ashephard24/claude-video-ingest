@@ -1105,6 +1105,157 @@ class TestLibraryIndex:
         assert removed == 0
 
 
+# ----- Library location resolution (v2.1.2) -----
+
+
+class TestLibraryRootResolution:
+    """
+    v2.1.2: library_root() supports a settings-based override. Priority:
+      1. VIDEO_INGEST_LIBRARY env var
+      2. library_location in settings.json
+      3. Default ~/Documents/claude-video-library/
+    """
+
+    def test_env_var_wins_over_settings_and_default(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from video_ingest import paths
+
+        env_dir = tmp_path / "from-env"
+        settings_dir = tmp_path / "from-settings"
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "settings.json").write_text(
+            json.dumps({"library_location": str(settings_dir)}),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("VIDEO_INGEST_LIBRARY", str(env_dir))
+        monkeypatch.setattr(paths, "_settings_config_dir", lambda: config_dir)
+
+        resolved = paths.library_root()
+        assert resolved == env_dir.expanduser().resolve()
+
+    def test_settings_used_when_no_env_var(self, tmp_path: Path, monkeypatch):
+        from video_ingest import paths
+
+        settings_dir = tmp_path / "custom-library"
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "settings.json").write_text(
+            json.dumps({"library_location": str(settings_dir)}),
+            encoding="utf-8",
+        )
+        monkeypatch.delenv("VIDEO_INGEST_LIBRARY", raising=False)
+        monkeypatch.setattr(paths, "_settings_config_dir", lambda: config_dir)
+
+        resolved = paths.library_root()
+        assert resolved == settings_dir.expanduser().resolve()
+
+    def test_default_when_neither_set(self, tmp_path: Path, monkeypatch):
+        from video_ingest import paths
+
+        empty_config = tmp_path / "empty-config"
+        empty_config.mkdir()
+        monkeypatch.delenv("VIDEO_INGEST_LIBRARY", raising=False)
+        monkeypatch.setattr(paths, "_settings_config_dir", lambda: empty_config)
+
+        resolved = paths.library_root()
+        assert resolved == Path.home() / "Documents" / "claude-video-library"
+
+    def test_empty_library_location_field_falls_through(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """An explicit empty string in settings means 'use the default'."""
+        from video_ingest import paths
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "settings.json").write_text(
+            json.dumps({"library_location": ""}),
+            encoding="utf-8",
+        )
+        monkeypatch.delenv("VIDEO_INGEST_LIBRARY", raising=False)
+        monkeypatch.setattr(paths, "_settings_config_dir", lambda: config_dir)
+
+        resolved = paths.library_root()
+        assert resolved == Path.home() / "Documents" / "claude-video-library"
+
+    def test_corrupt_settings_falls_through_silently(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from video_ingest import paths
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "settings.json").write_text(
+            "{not valid json",
+            encoding="utf-8",
+        )
+        monkeypatch.delenv("VIDEO_INGEST_LIBRARY", raising=False)
+        monkeypatch.setattr(paths, "_settings_config_dir", lambda: config_dir)
+
+        resolved = paths.library_root()
+        assert resolved == Path.home() / "Documents" / "claude-video-library"
+
+    def test_not_cached(self, tmp_path: Path, monkeypatch):
+        """
+        Changing the settings file between two calls to library_root()
+        must produce different results — paths.py must not cache.
+        """
+        from video_ingest import paths
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        first = tmp_path / "first"
+        second = tmp_path / "second"
+        monkeypatch.delenv("VIDEO_INGEST_LIBRARY", raising=False)
+        monkeypatch.setattr(paths, "_settings_config_dir", lambda: config_dir)
+
+        (config_dir / "settings.json").write_text(
+            json.dumps({"library_location": str(first)}), encoding="utf-8"
+        )
+        resolved1 = paths.library_root()
+
+        (config_dir / "settings.json").write_text(
+            json.dumps({"library_location": str(second)}), encoding="utf-8"
+        )
+        resolved2 = paths.library_root()
+
+        assert resolved1 == first.expanduser().resolve()
+        assert resolved2 == second.expanduser().resolve()
+        assert resolved1 != resolved2
+
+
+class TestGuiSettingsRoundTrip:
+    """v2.1.2: library_location round-trips through GuiSettings JSON."""
+
+    def test_library_location_default_is_empty(self):
+        from video_ingest.gui.settings import GuiSettings
+        assert GuiSettings().library_location == ""
+
+    def test_library_location_round_trip(self):
+        from video_ingest.gui.settings import GuiSettings
+
+        s = GuiSettings(library_location="/some/path/to/library")
+        reloaded = GuiSettings.from_json(s.to_json())
+        assert reloaded.library_location == "/some/path/to/library"
+
+    def test_old_settings_without_library_location_still_load(self):
+        """A settings.json written by v2.1.1 (no library_location field)
+        must still load with the new v2.1.2 dataclass, defaulting the
+        new field to empty."""
+        from video_ingest.gui.settings import GuiSettings
+
+        old_json = json.dumps({
+            "max_frames": 60,
+            "whisper_model": "base",
+            "use_whisper_fallback": True,
+        })
+        loaded = GuiSettings.from_json(old_json)
+        assert loaded.library_location == ""
+        assert loaded.max_frames == 60
+
+
 # ----- Error types -----
 
 

@@ -1,12 +1,17 @@
 """
 Settings dialog.
 
-A modal dialog with three editable fields (max frames, whisper model,
-whisper fallback enable) plus a read-only library location display.
-Save persists to settings.json; Cancel discards changes.
+A modal dialog with editable fields (max frames, whisper model,
+whisper fallback enable, library location) plus a read-only display
+of the settings file path. Save persists to settings.json; Cancel
+discards changes.
 """
 
 from __future__ import annotations
+
+import os
+import tempfile
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDesktopServices
@@ -16,12 +21,16 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..paths import library_root
@@ -32,6 +41,24 @@ from .settings import (
     save_settings,
     settings_path,
 )
+
+
+def _is_writable_directory(path: Path) -> bool:
+    """
+    Return True only if `path` is an existing directory that we can write
+    to. Tests writability concretely by creating and deleting a temp file
+    — more reliable than os.access on Windows.
+    """
+    if not path.is_dir():
+        return False
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=str(path), prefix=".cvi-writetest-", delete=True
+        ):
+            pass
+        return True
+    except (OSError, PermissionError):
+        return False
 
 
 class SettingsDialog(QDialog):
@@ -107,21 +134,34 @@ class SettingsDialog(QDialog):
 
         root.addLayout(form)
 
-        # --- Library location (read-only, with "Open" button) ---
+        # --- Library location (editable) ---
         lib_label = QLabel("Library location:")
-        lib_value_row = QHBoxLayout()
-        self._lib_path_label = QLabel(str(library_root()))
-        self._lib_path_label.setStyleSheet("color: #555;")
-        self._lib_path_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
+        lib_row_widget = QWidget()
+        lib_value_row = QHBoxLayout(lib_row_widget)
+        lib_value_row.setContentsMargins(0, 0, 0, 0)
+        lib_value_row.setSpacing(6)
+        # The QLineEdit always shows the effective library_root() path.
+        # An empty GuiSettings.library_location means "use the platform
+        # default"; we surface that default here so the user sees a real
+        # path in the field.
+        self._lib_path_edit = QLineEdit(str(library_root()))
+        self._lib_path_edit.setToolTip(
+            "Where ingested video folders and the library index live."
         )
+        browse_btn = QPushButton("Browse...")
+        browse_btn.clicked.connect(self._on_browse_library_clicked)
+        reset_btn = QPushButton("Reset to default")
+        reset_btn.setToolTip("Clear the custom path and revert to the platform default.")
+        reset_btn.clicked.connect(self._on_reset_library_clicked)
         open_lib_btn = QPushButton("Open")
         open_lib_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(library_root())))
         )
-        lib_value_row.addWidget(self._lib_path_label, stretch=1)
+        lib_value_row.addWidget(self._lib_path_edit, stretch=1)
+        lib_value_row.addWidget(browse_btn)
+        lib_value_row.addWidget(reset_btn)
         lib_value_row.addWidget(open_lib_btn)
-        form.addRow(lib_label, lib_value_row)
+        form.addRow(lib_label, lib_row_widget)
 
         # --- Settings file location (read-only, informational) ---
         settings_loc_label = QLabel(
@@ -143,12 +183,107 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
+    def _on_browse_library_clicked(self) -> None:
+        """Open a directory picker starting at the current path."""
+        start = self._lib_path_edit.text().strip() or str(library_root())
+        if not Path(start).is_dir():
+            start = str(Path.home())
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Choose library location", start
+        )
+        if chosen:
+            self._lib_path_edit.setText(chosen)
+
+    def _on_reset_library_clicked(self) -> None:
+        """Revert the field to the platform default library path."""
+        # The default is computed by clearing the library_location
+        # setting and re-resolving. We can't just call library_root()
+        # here because the user may still have a different saved value.
+        # Simpler: import the default-computing helper indirectly by
+        # re-resolving with the current env var respected but settings
+        # override ignored — but that requires plumbing. Practical
+        # shortcut: show the user the default path directly.
+        from ..paths import _settings_library_location
+        import os as _os
+        # If VIDEO_INGEST_LIBRARY is set, that's the effective default.
+        env = _os.environ.get("VIDEO_INGEST_LIBRARY")
+        if env:
+            self._lib_path_edit.setText(str(Path(env).expanduser().resolve()))
+            return
+        # Otherwise fall all the way back to the hardcoded default.
+        self._lib_path_edit.setText(
+            str(Path.home() / "Documents" / "claude-video-library")
+        )
+
     def _on_save(self) -> None:
         """Persist the form state and close with Accepted."""
+        raw_path = self._lib_path_edit.text().strip()
+        new_lib_path = Path(raw_path).expanduser() if raw_path else None
+        current_effective = library_root()
+
+        # Decide what to persist in settings.library_location. If the
+        # user's path equals the platform default (no env-var override,
+        # no saved override), store empty string — "use default".
+        default_path = Path.home() / "Documents" / "claude-video-library"
+        env_override = os.environ.get("VIDEO_INGEST_LIBRARY")
+        platform_default = (
+            Path(env_override).expanduser().resolve() if env_override else default_path
+        )
+        if new_lib_path is None or new_lib_path.resolve() == platform_default.resolve():
+            library_location_value = ""
+            effective_new_path = platform_default
+        else:
+            library_location_value = str(new_lib_path.resolve())
+            effective_new_path = new_lib_path.resolve()
+
+        # Validate the target path only if it's actually changing.
+        changing = effective_new_path.resolve() != current_effective.resolve()
+        if changing:
+            if not effective_new_path.exists():
+                QMessageBox.warning(
+                    self,
+                    "Library location invalid",
+                    f"The path does not exist:\n\n{effective_new_path}\n\n"
+                    f"Create the folder first, or choose an existing folder.",
+                )
+                return
+            if not _is_writable_directory(effective_new_path):
+                QMessageBox.warning(
+                    self,
+                    "Library location not writable",
+                    f"This path isn't writable or isn't a directory:\n\n"
+                    f"{effective_new_path}\n\n"
+                    f"Pick a location where you have write access.",
+                )
+                return
+
+            # Warn-and-punt: we do NOT auto-migrate existing videos.
+            warn = QMessageBox(self)
+            warn.setWindowTitle("Library location change")
+            warn.setIcon(QMessageBox.Icon.Warning)
+            warn.setText(
+                f"You're changing the library location to:\n\n"
+                f"    {effective_new_path}\n\n"
+                f"Videos already in your current library will NOT be moved "
+                f"automatically. If you want to keep them, close this dialog, "
+                f"move the existing folders to the new location manually, "
+                f"then come back and change the setting."
+            )
+            warn.setInformativeText("Proceed with the change?")
+            change_btn = warn.addButton(
+                "Change location", QMessageBox.ButtonRole.AcceptRole
+            )
+            cancel_btn = warn.addButton(QMessageBox.StandardButton.Cancel)
+            warn.setDefaultButton(cancel_btn)
+            warn.exec()
+            if warn.clickedButton() is not change_btn:
+                return
+
         updated = GuiSettings(
             max_frames=self._max_frames_spin.value(),
             whisper_model=self._whisper_model_combo.currentData(),
             use_whisper_fallback=self._whisper_enabled_check.isChecked(),
+            library_location=library_location_value,
         )
         save_settings(updated)
         self.accept()

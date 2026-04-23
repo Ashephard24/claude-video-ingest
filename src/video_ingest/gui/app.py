@@ -1130,6 +1130,9 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._append_log("Settings saved. They'll apply to the next ingest.")
+            # Library location may have changed — re-read the index from
+            # the new path so the Library tab reflects it immediately.
+            self._library_view.refresh()
 
     @Slot()
     def _on_doctor_clicked(self) -> None:

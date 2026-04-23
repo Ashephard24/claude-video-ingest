@@ -48,6 +48,11 @@ class GuiSettings:
     max_frames: int = 60
     whisper_model: str = "base"
     use_whisper_fallback: bool = True
+    # Absolute filesystem path to the library root. Empty string means
+    # "use the platform default" (~/Documents/claude-video-library/).
+    # Resolution order lives in ../paths.py::library_root and checks
+    # VIDEO_INGEST_LIBRARY env var first, then this field, then default.
+    library_location: str = ""
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
